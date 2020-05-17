@@ -14,6 +14,34 @@
 
 # [START cloudbuild-delivery]
 steps:
+# [START Access the cloudbuild private key file from Secret Manager]
+- name: gcr.io/cloud-builders/gcloud
+  entrypoint: 'bash'
+  args: [ '-c', 'gcloud secrets versions access latest --secret=288264074061-cloudbuild_gserviceaccount_com > /root/.ssh/288264074061-cloudbuild_gserviceaccount_com' ]
+  volumes:
+  - name: 'ssh'
+    path: /root/.ssh
+# [END Access the cloudbuild private key file from Secret Manager]
+
+# [START Set up git with key and domain]
+- name: 'gcr.io/cloud-builders/git'
+  entrypoint: '/bin/sh'
+  args:
+  - '-c'
+  - |
+    set -x
+    chmod 600 /root/.ssh/288264074061-cloudbuild_gserviceaccount_com
+    cat <<EOF >/root/.ssh/config
+    Hostname github.com
+    IdentityFile /root/.ssh/288264074061-cloudbuild_gserviceaccount_com
+    EOF
+    mv known_hosts.github /root/.ssh/known_hosts
+  volumes:
+  - name: 'ssh'
+    path: /root/.ssh
+# [END Set up git with key and domain]
+
+# [START GKE deployment]
 # This step deploys the new version of our container image
 # in the hello-cloudbuild Kubernetes Engine cluster.
 - name: 'gcr.io/cloud-builders/kubectl'
@@ -25,25 +53,29 @@ steps:
   env:
   - 'CLOUDSDK_COMPUTE_ZONE=asia-southeast1-b'
   - 'CLOUDSDK_CONTAINER_CLUSTER=hello-cloudbuild'
+# [END GKE deployment]
 
+# [START Push to the github repository - Production branch]
 # This step copies the applied manifest to the production branch
 # The COMMIT_SHA variable is automatically
 # replaced by Cloud Build.
 - name: 'gcr.io/cloud-builders/git'
-  id: Copy to production branch
-  entrypoint: /bin/sh
+  entrypoint: '/bin/sh'
   args:
   - '-c'
   - |
     set -x && \
-    # Configure Git to create commits with Cloud Build's service account
+    git clone --depth 1 --no-single-branch 'git@github.com:kenly-ldk/hello-cloudbuild-env.git' && \
+    cd hello-cloudbuild-env && \
+    git remote rename origin github && \
     git config user.email $(gcloud auth list --filter=status:ACTIVE --format='value(account)') && \
-    # Switch to the production branch and copy the kubernetes.yaml file from the candidate branch
-    git fetch origin production && git checkout production && \
+    git config user.name $(gcloud auth list --filter=status:ACTIVE --format='value(account)') && \
+    git checkout production && \
     git checkout $COMMIT_SHA kubernetes.yaml && \
-    # Commit the kubernetes.yaml file with a descriptive commit message
-    git commit -m "Manifest from commit $COMMIT_SHA
-    $(git log --format=%B -n 1 $COMMIT_SHA)" && \
-    # Push the changes back to Cloud Source Repository
-    git push origin production
+    git commit -m "Manifest from commit $COMMIT_SHA $(git log --format=%B -n 1 $COMMIT_SHA)" && \
+    git push github production
+  volumes:
+  - name: 'ssh'
+    path: /root/.ssh
+# [END Push to the github repository - Production branch]
 # [END cloudbuild-delivery]
