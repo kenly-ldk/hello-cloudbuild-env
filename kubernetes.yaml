@@ -30,7 +30,7 @@ spec:
     spec:
       containers:
       - name: hello-cloudbuild
-        image: gcr.io/my-spark-gitops-test/hello-cloudbuild:6004b3b
+        image: gcr.io/my-spark-gitops-test/hello-cloudbuild:123a2d4
         ports:
         - containerPort: 8080
 ---
